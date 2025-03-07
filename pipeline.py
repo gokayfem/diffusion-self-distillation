@@ -39,7 +39,6 @@ from diffusers.utils import (
 )
 from diffusers.utils.torch_utils import randn_tensor
 from diffusers.pipelines.pipeline_utils import DiffusionPipeline
-from recaption import enhance_prompt
 from transformer import FluxTransformer2DConditionalModel
 
 
@@ -723,15 +722,31 @@ class FluxConditionalPipeline(DiffusionPipeline, SD3LoraLoaderMixin):
 
         device = self._execution_device
 
-        prompt = enhance_prompt(image, prompt)
-        # if gemini_prompt:
-        #     while True:
-        #         try:
-        #             prompt = enhance_prompt(image, prompt)
-        #             break  # Exit the loop if the function succeeds
-        #         except Exception as e:
-        #             print(f"An error occurred: {e}")
-
+        # Replace the enhance_prompt call with our own implementation
+        if gemini_prompt and image is not None:
+            try:
+                # Convert tensor to PIL image for processing
+                from PIL import Image as PILImage
+                import torchvision.transforms as T
+                
+                # If image is a tensor, convert to PIL
+                if isinstance(image, torch.Tensor):
+                    # Ensure image is in the right format for conversion
+                    if image.dim() == 4:  # batch, channels, height, width
+                        pil_image = T.ToPILImage()(image[0].cpu().detach())
+                    else:
+                        pil_image = T.ToPILImage()(image.cpu().detach())
+                else:
+                    pil_image = image
+                    
+                # Use our async method to enhance the prompt
+                import asyncio
+                prompt = asyncio.run(self.enhance_prompt(pil_image, prompt))
+                print(f"Enhanced prompt: {prompt}")
+            except Exception as e:
+                print(f"Error enhancing prompt: {e}")
+                # Continue with original prompt if enhancement fails
+        
         lora_scale = (
             self.joint_attention_kwargs.get("scale", None)
             if self.joint_attention_kwargs is not None
